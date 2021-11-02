@@ -1,0 +1,10 @@
+{
+    "shared": {
+        "name": "coolelytra",
+		"include": []
+    },
+    "depends": [
+    	"innercore",
+    	"nativejs"
+	]
+}
