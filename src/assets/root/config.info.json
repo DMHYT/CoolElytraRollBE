@@ -1,3 +1,34 @@
 {
-    
+    "description": {
+        "en": "This is a configuration of CoolElytraRoll mod",
+        "ru": "Это конфигурация мода CoolElytraRoll"
+    },
+    "properties": {
+        "enabled": {
+            "name": {
+                "en": "Enable Mod",
+                "ru": "Включить мод"
+            }
+        },
+        "wingPower": {
+            "name": {
+                "en": "Turning Force",
+                "ru": "Сила поворота"
+            },
+            "description": {
+                "en": "Controls sensivity. Higher = stronger roll. You can set it to 0 to disable all camera rolling.",
+                "ru": "Управляет чувствительностью. Выше = сильнее наклон. Вы можете установить значение 0, чтобы полностью отключить наклон камеры."
+            }
+        },
+        "rollSmoothing": {
+            "name": {
+                "en": "Camera Smoothing",
+                "ru": "Сглаживание камеры"
+            },
+            "description": {
+                "en": "Smooths changes to the camera's roll angle. Closer to 1 is smoother, 1 stops roll. Set to 0 to disable smoothing.",
+                "ru": "Сглаживает изменения угла наклона камеры. При значении ближе к 1 - плавнее, при 1 наклон останавливается. Установите значение 0 для отключения сглаживания."
+            }
+        }
+    }
 }
