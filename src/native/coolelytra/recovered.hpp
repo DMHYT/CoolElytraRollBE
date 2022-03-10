@@ -1,6 +1,3 @@
-#include "../../../../../../../DMH/glm/detail/qualifier.hpp"
-#include "../../../../../../../DMH/glm/ext/quaternion_float.hpp"
-
 #ifndef COOLELYTRAROLL_RECOVERED_HPP
 #define COOLELYTRAROLL_RECOVERED_HPP
 
@@ -12,55 +9,66 @@ class BlockPos {
 };
 class Vec2 {
     public:
-    float x, y;
+    float y, x;
 };
 class Vec3 {
     public:
-    float x, y, z;
-    Vec3(BlockPos const&);
+    union {
+        struct {
+            float x, y, z;
+        };
+        float values[3];
+    };
 };
-
-class Matrix {
+class Camera {
     public:
-    Matrix(glm::tquat<float, (glm::precision)0> const&);
-    void mult(Matrix const&);
+    void setOrientation(float, float, float);
+    Vec3 getEulerAngles() const;
 };
-
-class Tessellator {
-    public:
-    Matrix* getTransformMatrix() const;
-};
-
-class ScreenContext {
-    public:
-    char filler1[16];
-    Tessellator* tessellator;
-};
-class GameRenderer;
 class LevelRenderer;
+class ScreenContext;
 class FrameRenderObject;
-
 class StateVectorComponent {
     public:
     Vec3 position;
     Vec3 lastPosition;
     Vec3 velocity;
 };
-
+enum ActorFlags { ELYTRA_FLYING = 32 };
 class Actor {
     public:
     bool isInWater() const;
     bool isInLava() const;
-    Vec2* getRotation() const;
-    StateVectorComponent& getStateVectorComponent();
+    int getLifeSpan() const;
+    Vec2 getRotation() const;
+    StateVectorComponent& getStateVectorComponent() const;
+    bool getStatusFlag(ActorFlags) const;
+};
+class FireworksRocketActor : public Actor {
+    public:
+    char filler[1256];
+    int life;
+    int lifespan;
+    bool isAttachedToEntity() const;
 };
 class Mob : public Actor {public:};
 class Player : public Mob {public:};
 class LocalPlayer : public Player {public:};
-
-
+class CameraDirector {
+    public:
+    Camera* getCamera() const;
+};
+class Timer {
+    public:
+    float getAlpha() const;
+};
+class Minecraft {
+    public:
+    Timer* getTimer();  
+};
 namespace GlobalContext {
     LocalPlayer* getLocalPlayer();
+    Minecraft* getMinecraft();
 }
 
 

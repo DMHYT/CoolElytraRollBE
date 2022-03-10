@@ -1,12 +1,9 @@
+#include "../../../toolchain/ndk/arm/sysroot/usr/include/math.h"
 #include <hook.h>
 #include <mod.h>
-#include <logger.h>
 #include <symbol.h>
-#include <jni.h>
 #include <nativejs.h>
 #include "recovered.hpp"
-#include "../../../toolchain/ndk/arm/sysroot/usr/include/math.h"
-#include "../../../../../../../DMH/glm/ext/quaternion_float.hpp"
 
 
 class CoolElytraModule : public Module {
@@ -17,83 +14,104 @@ class CoolElytraModule : public Module {
 	static float lerp(float delta, float o, float n) {
 		return o + (n - o) * delta;
 	}
-	
 	public:
-	static float tickDelta;
 	static float previousRollAngle;
-
+	static bool isRocketing;
 	CoolElytraModule(): Module("coolelytra") {};
-
 	virtual void initialize() {
 		DLHandleManager::initializeHandle("libminecraftpe.so", "mcpe");
-		HookManager::addCallback(SYMBOL("mcpe", "_ZN12GameRenderer18renderCurrentFrameEf"), LAMBDA((GameRenderer* renderer, float delta), { tickDelta = delta; }, ), HookManager::CALL | HookManager::LISTENER);
-		HookManager::addCallback(SYMBOL("mcpe", "_ZN13LevelRenderer11renderLevelER13ScreenContextRK17FrameRenderObject"), LAMBDA((LevelRenderer* renderer, ScreenContext& ctx, FrameRenderObject& renderObj), {
-			onRenderLevel(renderer, ctx, renderObj);
-		}, ), HookManager::CALL | HookManager::LISTENER);
+		HookManager::addCallback(
+			SYMBOL("mcpe", "_ZN14CameraDirector6updateER15IClientInstanceff"),
+			LAMBDA((CameraDirector* director, void* client, float f1, float f2), {
+				onRenderLevel(director);
+			}, ),
+			HookManager::RETURN | HookManager::LISTENER
+		);
+		HookManager::addCallback(
+			SYMBOL("mcpe", "_ZN20FireworksRocketActor10normalTickEv"),
+			LAMBDA((FireworksRocketActor* actor), {
+				if(actor->isAttachedToEntity()) {
+					isRocketing = actor->life < actor->lifespan;
+				}
+			}, ),
+			HookManager::CALL | HookManager::LISTENER
+		);
     }
-
-	static void onRenderLevel(LevelRenderer* renderer, ScreenContext& ctx, FrameRenderObject& renderObj) {
+	static void onRenderLevel(CameraDirector* director) {
 		LocalPlayer* player = GlobalContext::getLocalPlayer();
-		if(true /*TODO isFallFlying*/ && !(player->isInWater() || player->isInLava())) {
-			Vec2* facing = player->getRotation();
-			Vec3* velocity = getPlayerInstantaneousVelocity();
-			double horizontalFacing = facing->x * facing->x + facing->y * facing->y;
-			double horizontalSpeed = velocity->x * velocity->x + velocity->z * velocity->z;
+		if(player->getStatusFlag(ActorFlags::ELYTRA_FLYING) && !(player->isInWater() || player->isInLava()) && !isRocketing) {
+			Vec3 facing = getVectorFromRotation(player->getRotation());
+			Vec3 velocity = getPlayerInstantaneousVelocity();
+			double horizontalFacingSquared = facing.x * facing.x + facing.z * facing.z;
+			double horizontalSpeedSquared = velocity.x * velocity.x + velocity.z * velocity.z;
 			float rollAngle = 0.0f;
-			if(horizontalFacing > 0.0 && horizontalSpeed > 0.0) {
-				double dot = (velocity->x * facing->x + velocity->z * facing->y) / sqrt(horizontalFacing * horizontalSpeed);
+			if(horizontalFacingSquared > 0.0 && horizontalSpeedSquared > 0.0) {
+				double dot = (velocity.x * facing.x + velocity.z * facing.z) / sqrt(horizontalFacingSquared * horizontalSpeedSquared);
 				if(dot >= 1.0) dot = 1.0;
 				else if(dot <= -1.0) dot = -1.0;
-				double direction = signum(velocity->x * facing->y - velocity->z * facing->x);
-				rollAngle = (float) (atan(sqrt(horizontalSpeed) * acos(dot) * wingPower) * direction * 57.29577951308);
+				double direction = signum(velocity.x * facing.z - velocity.z * facing.x);
+				rollAngle = (float) (atan(sqrt(horizontalSpeedSquared) * acos(dot) * wingPower) * direction * 57.29577951308);
 			}
 			rollAngle = (float) ((1.0 - rollSmoothing) * rollAngle + rollSmoothing * previousRollAngle);
 			previousRollAngle = rollAngle;
-			ctx.tessellator->getTransformMatrix()->mult(Matrix(glm::quat(rollAngle, 0, 0, 1)));
+			Camera* camera = director->getCamera();
+			Vec3 angles = camera->getEulerAngles();
+			camera->setOrientation(-angles.y, -angles.x, angles.z - (rollAngle * 0.017453292f));
 		}
 	}
-	static Vec3* getPlayerInstantaneousVelocity() {
+	static Vec3 getPlayerInstantaneousVelocity() {
 		LocalPlayer* player = GlobalContext::getLocalPlayer();
 		Vec3 velocity = player->getStateVectorComponent().velocity;
-		if(tickDelta < 0.01f) {
-			Vec3* pVelocity = &velocity;
-			return pVelocity;
-		}
+		float tickDelta = GlobalContext::getMinecraft()->getTimer()->getAlpha();
+		if(tickDelta < 0.01f) return velocity;
 		double newvx = velocity.x;
 		double newvy = velocity.y;
 		double newvz = velocity.z;
 		double gravity = 0.08;
-		Vec2* facing = player->getRotation();
-		float pitchRadians = facing->x * 0.017453292f;
-		double horizontalFacingSquared = facing->x * facing->x + facing->y * facing->y;
+		Vec2 rotation = player->getRotation();
+		Vec3 facing = getVectorFromRotation(rotation);
+		float pitchRadians = rotation.y * 0.017453292f;
+		double horizontalFacingSquared = facing.x * facing.x + facing.z * facing.z;
 		double horizontalFacing = sqrt(horizontalFacingSquared);
 		double horizontalSpeed = sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
-		newvy += gravity * (-1.0 * horizontalFacingSquared * 0.75);
+		newvy += gravity * (-1.0 + horizontalFacingSquared * 0.75);
 		if(horizontalFacing > 0.0) {
 			if(velocity.y < 0.0) {
 				double lift = newvy * -0.1 * horizontalFacingSquared;
-				newvx += facing->x * lift / horizontalFacing;
+				newvx += facing.x * lift / horizontalFacing;
 				newvy += lift;
-				newvz += facing->y * lift / horizontalFacing;
+				newvz += facing.z * lift / horizontalFacing;
 			}
 			if(pitchRadians < 0.0f) {
-				double lift = horizontalSpeed * -(double)sin(pitchRadians) * 0.04;
-				newvx += -facing->x * lift / horizontalFacing;
+				double lift = horizontalSpeed * -(double)sinf(pitchRadians) * 0.04;
+				newvx += -facing.x * lift / horizontalFacing;
 				newvy += lift * 3.2;
-				newvz += -facing->y * lift / horizontalFacing;
+				newvz += -facing.z * lift / horizontalFacing;
 			}
-			newvx += (facing->x / horizontalFacing * horizontalSpeed - velocity.x) * 0.1;
-			newvz += (facing->y / horizontalFacing * horizontalSpeed - velocity.z) * 0.1;
+			newvx += (facing.x / horizontalFacing * horizontalSpeed - velocity.x) * 0.1;
+			newvz += (facing.z / horizontalFacing * horizontalSpeed - velocity.z) * 0.1;
 		}
-		Vec3 result(BlockPos(lerp(tickDelta, velocity.x, newvx), lerp(tickDelta, velocity.y, newvy), lerp(tickDelta, velocity.z, newvz)));
-		Vec3* pResult = &result;
-		return pResult;
+		newvx *= 0.9900000095367432;
+		newvy *= 0.9800000190734863;
+		newvz *= 0.9900000095367432;
+		return Vec3 {
+			lerp(tickDelta, velocity.x, (float) newvx),
+			lerp(tickDelta, velocity.y, (float) newvy),
+			lerp(tickDelta, velocity.z, (float) newvz)
+		};
+	}
+	static Vec3 getVectorFromRotation(Vec2 const& rotation) {
+		float f = cosf(-rotation.x * 0.017453292f - M_PI);
+		float f1 = sinf(-rotation.x * 0.017453292f - M_PI);
+		float f2 = -cosf(-rotation.y * 0.017453292f);
+		float f3 = sinf(-rotation.y * 0.017453292f);
+		return Vec3 { f1 * f2, f3, f * f2 };
 	}
 	static double wingPower;
 	static double rollSmoothing;
 };
-float CoolElytraModule::tickDelta = 0.0f;
 float CoolElytraModule::previousRollAngle = 0.0f;
+bool CoolElytraModule::isRocketing = false;
 double CoolElytraModule::wingPower = 1.25;
 double CoolElytraModule::rollSmoothing = 0.85;
 
